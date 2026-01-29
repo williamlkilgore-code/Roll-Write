@@ -1,0 +1,10 @@
+# Binaries (keep Windows executables)
+rollwrite-linux
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Build
+dist/
