@@ -1,5 +1,5 @@
-# Binaries (keep Windows executables)
-rollwrite-linux
+# Binaries - keep platform executables
+# rollwrite (Linux), rollwrite-windows-*.exe are tracked
 
 # IDE
 .idea/
