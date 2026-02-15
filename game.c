@@ -175,14 +175,66 @@ static void connect_rooms(Level *level, PRNG *rng) {
     }
 }
 
+/* Check if position has valid moves for BOTH parities (orthogonal and diagonal) */
+static bool position_has_all_moves(Level *level, int px, int py) {
+    /* Check bounds - need 1 tile margin all around */
+    if (px < 1 || px >= GRID_WIDTH - 1 || py < 1 || py >= GRID_HEIGHT - 1) {
+        return false;
+    }
+
+    /* Check all 8 neighbors are passable (not walls) */
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            TileType tile = level->grid[py + dy][px + dx].tile;
+            if (tile == TILE_WALL || tile == TILE_LOCKED_DOOR) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 static void place_start_and_stairs(Level *level, PRNG *rng) {
     if (level->room_count >= 2) {
         Room *start_room = &level->rooms[0];
         Room *stairs_room = &level->rooms[level->room_count - 1];
 
-        /* Place player at CENTER of room to ensure valid moves in all directions */
-        level->start_x = start_room->x + start_room->width / 2;
-        level->start_y = start_room->y + start_room->height / 2;
+        /* Try center first */
+        int center_x = start_room->x + start_room->width / 2;
+        int center_y = start_room->y + start_room->height / 2;
+
+        if (position_has_all_moves(level, center_x, center_y)) {
+            level->start_x = center_x;
+            level->start_y = center_y;
+        } else {
+            /* Search for valid position within room, starting from center outward */
+            bool found = false;
+            for (int radius = 0; radius < 3 && !found; radius++) {
+                for (int dy = -radius; dy <= radius && !found; dy++) {
+                    for (int dx = -radius; dx <= radius && !found; dx++) {
+                        int tx = center_x + dx;
+                        int ty = center_y + dy;
+                        /* Check if inside room bounds */
+                        if (tx >= start_room->x && tx < start_room->x + start_room->width &&
+                            ty >= start_room->y && ty < start_room->y + start_room->height) {
+                            if (position_has_all_moves(level, tx, ty)) {
+                                level->start_x = tx;
+                                level->start_y = ty;
+                                found = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!found) {
+                /* Fallback to center even if not perfect */
+                level->start_x = center_x;
+                level->start_y = center_y;
+            }
+        }
 
         /* Stairs can be anywhere in the room */
         level->stairs_x = stairs_room->x + prng_randint(rng, 0, stairs_room->width - 1);
