@@ -180,8 +180,11 @@ static void place_start_and_stairs(Level *level, PRNG *rng) {
         Room *start_room = &level->rooms[0];
         Room *stairs_room = &level->rooms[level->room_count - 1];
 
-        level->start_x = start_room->x + prng_randint(rng, 0, start_room->width - 1);
-        level->start_y = start_room->y + prng_randint(rng, 0, start_room->height - 1);
+        /* Place player at CENTER of room to ensure valid moves in all directions */
+        level->start_x = start_room->x + start_room->width / 2;
+        level->start_y = start_room->y + start_room->height / 2;
+
+        /* Stairs can be anywhere in the room */
         level->stairs_x = stairs_room->x + prng_randint(rng, 0, stairs_room->width - 1);
         level->stairs_y = stairs_room->y + prng_randint(rng, 0, stairs_room->height - 1);
     } else {
