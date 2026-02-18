@@ -197,6 +197,53 @@ static bool position_has_all_moves(Level *level, int px, int py) {
     return true;
 }
 
+/* Flood fill to check if two positions are connected */
+static bool is_reachable(Level *level, int start_x, int start_y, int goal_x, int goal_y) {
+    if (start_x == goal_x && start_y == goal_y) return true;
+
+    /* Simple BFS flood fill */
+    bool visited[GRID_HEIGHT][GRID_WIDTH] = {{false}};
+    int queue_x[GRID_WIDTH * GRID_HEIGHT];
+    int queue_y[GRID_WIDTH * GRID_HEIGHT];
+    int head = 0, tail = 0;
+
+    queue_x[tail] = start_x;
+    queue_y[tail] = start_y;
+    tail++;
+    visited[start_y][start_x] = true;
+
+    while (head < tail) {
+        int x = queue_x[head];
+        int y = queue_y[head];
+        head++;
+
+        /* Check 4 cardinal directions */
+        int dx[] = {0, 0, 1, -1};
+        int dy[] = {1, -1, 0, 0};
+
+        for (int i = 0; i < 4; i++) {
+            int nx = x + dx[i];
+            int ny = y + dy[i];
+
+            if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+            if (visited[ny][nx]) continue;
+
+            TileType tile = level->grid[ny][nx].tile;
+            if (tile == TILE_WALL) continue;
+            /* Can walk through locked doors (might have key) */
+
+            if (nx == goal_x && ny == goal_y) return true;
+
+            visited[ny][nx] = true;
+            queue_x[tail] = nx;
+            queue_y[tail] = ny;
+            tail++;
+        }
+    }
+
+    return false;
+}
+
 /* Find a valid spawn position with all 8 neighbors passable */
 static bool find_valid_spawn(Level *level, int *out_x, int *out_y) {
     /* First, try each room's interior (not edges) */
@@ -249,15 +296,48 @@ static void place_start_and_stairs(Level *level, PRNG *rng) {
         found_start:;
     }
 
-    /* Place stairs in last room if possible */
-    if (level->room_count >= 2) {
-        Room *stairs_room = &level->rooms[level->room_count - 1];
-        level->stairs_x = stairs_room->x + prng_randint(rng, 0, stairs_room->width - 1);
-        level->stairs_y = stairs_room->y + prng_randint(rng, 0, stairs_room->height - 1);
-    } else {
-        /* Fallback */
-        level->stairs_x = 3 * GRID_WIDTH / 4;
-        level->stairs_y = 3 * GRID_HEIGHT / 4;
+    /* Place stairs - try rooms in reverse order, checking reachability */
+    bool stairs_placed = false;
+    for (int r = level->room_count - 1; r >= 0 && !stairs_placed; r--) {
+        Room *room = &level->rooms[r];
+        /* Try center of room first */
+        int sx = room->x + room->width / 2;
+        int sy = room->y + room->height / 2;
+
+        if (is_reachable(level, level->start_x, level->start_y, sx, sy)) {
+            level->stairs_x = sx;
+            level->stairs_y = sy;
+            stairs_placed = true;
+        }
+    }
+
+    /* If no room center is reachable, search entire level for reachable spot far from start */
+    if (!stairs_placed) {
+        int best_x = -1, best_y = -1;
+        int best_dist = 0;
+
+        for (int y = 1; y < GRID_HEIGHT - 1; y++) {
+            for (int x = 1; x < GRID_WIDTH - 1; x++) {
+                if (level->grid[y][x].tile != TILE_EMPTY) continue;
+                if (x == level->start_x && y == level->start_y) continue;
+
+                int dist = abs(x - level->start_x) + abs(y - level->start_y);
+                if (dist > best_dist && is_reachable(level, level->start_x, level->start_y, x, y)) {
+                    best_x = x;
+                    best_y = y;
+                    best_dist = dist;
+                }
+            }
+        }
+
+        if (best_x >= 0) {
+            level->stairs_x = best_x;
+            level->stairs_y = best_y;
+        } else {
+            /* Last resort - place near start */
+            level->stairs_x = level->start_x + 1;
+            level->stairs_y = level->start_y;
+        }
     }
 
     level->grid[level->start_y][level->start_x].tile = TILE_START;
