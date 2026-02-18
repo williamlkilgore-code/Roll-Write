@@ -196,53 +196,65 @@ static bool position_has_all_moves(Level *level, int px, int py) {
     return true;
 }
 
-static void place_start_and_stairs(Level *level, PRNG *rng) {
-    if (level->room_count >= 2) {
-        Room *start_room = &level->rooms[0];
-        Room *stairs_room = &level->rooms[level->room_count - 1];
-
-        /* Try center first */
-        int center_x = start_room->x + start_room->width / 2;
-        int center_y = start_room->y + start_room->height / 2;
-
-        if (position_has_all_moves(level, center_x, center_y)) {
-            level->start_x = center_x;
-            level->start_y = center_y;
-        } else {
-            /* Search for valid position within room, starting from center outward */
-            bool found = false;
-            for (int radius = 0; radius < 3 && !found; radius++) {
-                for (int dy = -radius; dy <= radius && !found; dy++) {
-                    for (int dx = -radius; dx <= radius && !found; dx++) {
-                        int tx = center_x + dx;
-                        int ty = center_y + dy;
-                        /* Check if inside room bounds */
-                        if (tx >= start_room->x && tx < start_room->x + start_room->width &&
-                            ty >= start_room->y && ty < start_room->y + start_room->height) {
-                            if (position_has_all_moves(level, tx, ty)) {
-                                level->start_x = tx;
-                                level->start_y = ty;
-                                found = true;
-                            }
-                        }
-                    }
+/* Find a valid spawn position with all 8 neighbors passable */
+static bool find_valid_spawn(Level *level, int *out_x, int *out_y) {
+    /* First, try each room's interior (not edges) */
+    for (int r = 0; r < level->room_count; r++) {
+        Room *room = &level->rooms[r];
+        /* Only check interior positions (1 tile from edges) */
+        for (int ry = room->y + 1; ry < room->y + room->height - 1; ry++) {
+            for (int rx = room->x + 1; rx < room->x + room->width - 1; rx++) {
+                if (position_has_all_moves(level, rx, ry)) {
+                    *out_x = rx;
+                    *out_y = ry;
+                    return true;
                 }
             }
+        }
+    }
 
-            if (!found) {
-                /* Fallback to center even if not perfect */
-                level->start_x = center_x;
-                level->start_y = center_y;
+    /* If no room interior works, search the entire level */
+    for (int y = 2; y < GRID_HEIGHT - 2; y++) {
+        for (int x = 2; x < GRID_WIDTH - 2; x++) {
+            if (level->grid[y][x].tile == TILE_EMPTY && position_has_all_moves(level, x, y)) {
+                *out_x = x;
+                *out_y = y;
+                return true;
             }
         }
+    }
 
-        /* Stairs can be anywhere in the room */
+    return false;
+}
+
+static void place_start_and_stairs(Level *level, PRNG *rng) {
+    /* Find valid start position */
+    int start_x, start_y;
+    if (find_valid_spawn(level, &start_x, &start_y)) {
+        level->start_x = start_x;
+        level->start_y = start_y;
+    } else {
+        /* Emergency fallback - should never happen with proper level gen */
+        /* Find ANY empty tile */
+        for (int y = 1; y < GRID_HEIGHT - 1; y++) {
+            for (int x = 1; x < GRID_WIDTH - 1; x++) {
+                if (level->grid[y][x].tile == TILE_EMPTY) {
+                    level->start_x = x;
+                    level->start_y = y;
+                    goto found_start;
+                }
+            }
+        }
+        found_start:;
+    }
+
+    /* Place stairs in last room if possible */
+    if (level->room_count >= 2) {
+        Room *stairs_room = &level->rooms[level->room_count - 1];
         level->stairs_x = stairs_room->x + prng_randint(rng, 0, stairs_room->width - 1);
         level->stairs_y = stairs_room->y + prng_randint(rng, 0, stairs_room->height - 1);
     } else {
-        /* Fallback: find any empty tiles */
-        level->start_x = GRID_WIDTH / 4;
-        level->start_y = GRID_HEIGHT / 4;
+        /* Fallback */
         level->stairs_x = 3 * GRID_WIDTH / 4;
         level->stairs_y = 3 * GRID_HEIGHT / 4;
     }
