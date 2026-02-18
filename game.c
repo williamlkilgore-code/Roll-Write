@@ -439,8 +439,8 @@ Level *level_generate(uint64_t master_seed, int floor_number) {
 
     generate_rooms(level, &layout_rng);
     connect_rooms(level, &layout_rng);
-    place_start_and_stairs(level, &layout_rng);
     int num_doors = place_locked_doors(level, &layout_rng);
+    place_start_and_stairs(level, &layout_rng);  /* After doors so we can check for them */
     place_portals(level, &portal_rng);
     place_content(level, &content_rng, num_doors);
 

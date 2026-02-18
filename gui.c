@@ -69,20 +69,20 @@
 #define COLOR_ACCENT    RGB(74, 158, 255)
 #define COLOR_HP_BAR    RGB(255, 68, 68)
 
-/* Tile symbols */
+/* Tile symbols - using ASCII-compatible characters for Wine compatibility */
 static const wchar_t *TILE_SYMBOLS[] = {
-    L"·",  /* EMPTY */
-    L"█",  /* WALL */
-    L"⌂",  /* START */
-    L"▼",  /* STAIRS */
-    L"●",  /* COIN */
-    L"◆",  /* CHEST */
-    L"♥",  /* HEART */
-    L"◈",  /* ENEMY */
-    L"※",  /* WEB */
-    L"⚷",  /* KEY */
-    L"▣",  /* LOCKED_DOOR */
-    L"◎"   /* PORTAL */
+    L".",  /* EMPTY */
+    L"#",  /* WALL */
+    L"S",  /* START */
+    L">",  /* STAIRS */
+    L"$",  /* COIN */
+    L"?",  /* CHEST */
+    L"+",  /* HEART */
+    L"X",  /* ENEMY */
+    L"~",  /* WEB */
+    L"!",  /* KEY */
+    L"D",  /* LOCKED_DOOR */
+    L"O"   /* PORTAL */
 };
 
 /* ==========================================================================
