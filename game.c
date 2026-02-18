@@ -94,9 +94,10 @@ static void generate_rooms(Level *level, PRNG *rng) {
     level->room_count = 0;
 
     for (int attempt = 0; attempt < max_attempts && level->room_count < target_rooms; attempt++) {
-        /* Room interior size (min 3x3) */
-        int room_w = prng_randint(rng, 3, 6);
-        int room_h = prng_randint(rng, 3, 6);
+        /* Room interior size - first room is 5x5 minimum to guarantee valid spawn */
+        int min_size = (level->room_count == 0) ? 5 : 3;
+        int room_w = prng_randint(rng, min_size, 7);
+        int room_h = prng_randint(rng, min_size, 7);
 
         if (room_w > GRID_WIDTH - 4) room_w = GRID_WIDTH - 4;
         if (room_h > GRID_HEIGHT - 4) room_h = GRID_HEIGHT - 4;
