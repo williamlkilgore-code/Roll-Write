@@ -13,8 +13,8 @@
  * CONSTANTS
  * ========================================================================== */
 
-#define GRID_WIDTH      15
-#define GRID_HEIGHT     15
+#define GRID_WIDTH      25
+#define GRID_HEIGHT     20
 #define MAX_FLOORS      100
 #define MAX_ROOMS       10
 #define MAX_PORTALS     10

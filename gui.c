@@ -19,9 +19,9 @@
  * GUI CONSTANTS
  * ========================================================================== */
 
-#define WIN_WIDTH   900
-#define WIN_HEIGHT  700
-#define CELL_SIZE   32
+#define WIN_WIDTH   950
+#define WIN_HEIGHT  620
+#define CELL_SIZE   24
 #define GRID_OFFSET_X  20
 #define GRID_OFFSET_Y  60
 
