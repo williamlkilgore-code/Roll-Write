@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #include "game.h"
 
 /* ==========================================================================
@@ -69,21 +70,274 @@
 #define COLOR_ACCENT    RGB(74, 158, 255)
 #define COLOR_HP_BAR    RGB(255, 68, 68)
 
-/* Tile symbols - using ASCII-compatible characters for Wine compatibility */
-static const wchar_t *TILE_SYMBOLS[] = {
-    L".",  /* EMPTY */
-    L"#",  /* WALL */
-    L"S",  /* START */
-    L">",  /* STAIRS */
-    L"$",  /* COIN */
-    L"?",  /* CHEST */
-    L"+",  /* HEART */
-    L"X",  /* ENEMY */
-    L"~",  /* WEB */
-    L"!",  /* KEY */
-    L"D",  /* LOCKED_DOOR */
-    L"O"   /* PORTAL */
-};
+/* ==========================================================================
+ * GDI TILE DRAWING FUNCTIONS
+ * ========================================================================== */
+
+/* Draw a filled circle */
+static void DrawCircle(HDC hdc, int cx, int cy, int radius, COLORREF fillColor, COLORREF borderColor) {
+    HBRUSH brush = CreateSolidBrush(fillColor);
+    HPEN pen = CreatePen(PS_SOLID, 1, borderColor);
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Ellipse(hdc, cx - radius, cy - radius, cx + radius, cy + radius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Draw an empty floor tile - small center dot */
+static void DrawTileEmpty(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int cy = y + size / 2;
+    DrawCircle(hdc, cx, cy, 2, RGB(60, 60, 60), RGB(60, 60, 60));
+}
+
+/* Draw a wall tile - solid block with subtle border */
+static void DrawTileWall(HDC hdc, int x, int y, int size) {
+    HBRUSH brush = CreateSolidBrush(RGB(50, 50, 70));
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(30, 30, 50));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Rectangle(hdc, x + 1, y + 1, x + size - 1, y + size - 1);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Draw start position - green square marker */
+static void DrawTileStart(HDC hdc, int x, int y, int size) {
+    int margin = size / 6;
+    HBRUSH brush = CreateSolidBrush(COLOR_START);
+    HPEN pen = CreatePen(PS_SOLID, 2, RGB(100, 200, 100));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Rectangle(hdc, x + margin, y + margin, x + size - margin, y + size - margin);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Draw stairs - downward arrow */
+static void DrawTileStairs(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int margin = size / 5;
+    POINT pts[3] = {
+        {cx, y + size - margin},           /* bottom point */
+        {x + margin, y + margin + 2},      /* top left */
+        {x + size - margin, y + margin + 2} /* top right */
+    };
+    HBRUSH brush = CreateSolidBrush(COLOR_STAIRS);
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(180, 130, 180));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Polygon(hdc, pts, 3);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Draw coin - yellow filled circle */
+static void DrawTileCoin(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int cy = y + size / 2;
+    int radius = size / 3;
+    DrawCircle(hdc, cx, cy, radius, COLOR_COIN, RGB(200, 170, 0));
+    /* Inner highlight */
+    DrawCircle(hdc, cx - 2, cy - 2, radius / 3, RGB(255, 240, 150), RGB(255, 240, 150));
+}
+
+/* Draw chest - brown box with lid */
+static void DrawTileChest(HDC hdc, int x, int y, int size) {
+    int margin = size / 5;
+    int midY = y + size / 2;
+    HBRUSH brush = CreateSolidBrush(COLOR_CHEST);
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(120, 80, 40));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    /* Main box */
+    Rectangle(hdc, x + margin, midY - 2, x + size - margin, y + size - margin);
+    /* Lid */
+    HBRUSH lidBrush = CreateSolidBrush(RGB(180, 120, 60));
+    SelectObject(hdc, lidBrush);
+    Rectangle(hdc, x + margin, y + margin + 2, x + size - margin, midY);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(lidBrush);
+    DeleteObject(pen);
+    /* Lock */
+    DrawCircle(hdc, x + size/2, midY, 3, RGB(255, 215, 0), RGB(200, 170, 0));
+}
+
+/* Draw heart - using polygon */
+static void DrawTileHeart(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int margin = size / 5;
+    POINT pts[8] = {
+        {cx, y + size - margin - 2},      /* bottom point */
+        {x + margin, y + size/2},          /* left middle */
+        {x + margin, y + margin + 4},      /* left top */
+        {cx - 3, y + margin},              /* left bump */
+        {cx, y + margin + 4},              /* center dip */
+        {cx + 3, y + margin},              /* right bump */
+        {x + size - margin, y + margin + 4}, /* right top */
+        {x + size - margin, y + size/2}    /* right middle */
+    };
+    HBRUSH brush = CreateSolidBrush(COLOR_HEART);
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(200, 80, 140));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Polygon(hdc, pts, 8);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Draw enemy - red X */
+static void DrawTileEnemy(HDC hdc, int x, int y, int size) {
+    int margin = size / 4;
+    HPEN pen = CreatePen(PS_SOLID, 3, COLOR_ENEMY);
+    HPEN oldPen = SelectObject(hdc, pen);
+    /* Draw X */
+    MoveToEx(hdc, x + margin, y + margin, NULL);
+    LineTo(hdc, x + size - margin, y + size - margin);
+    MoveToEx(hdc, x + size - margin, y + margin, NULL);
+    LineTo(hdc, x + margin, y + size - margin);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+    /* Red glow circle behind */
+    DrawCircle(hdc, x + size/2, y + size/2, size/3, RGB(80, 20, 20), RGB(80, 20, 20));
+}
+
+/* Draw web - radial lines */
+static void DrawTileWeb(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int cy = y + size / 2;
+    int radius = size / 2 - 3;
+    HPEN pen = CreatePen(PS_SOLID, 1, COLOR_WEB);
+    HPEN oldPen = SelectObject(hdc, pen);
+    /* Draw 8 radial lines */
+    for (int i = 0; i < 8; i++) {
+        double angle = i * 3.14159 / 4;
+        int ex = cx + (int)(radius * cos(angle));
+        int ey = cy + (int)(radius * sin(angle));
+        MoveToEx(hdc, cx, cy, NULL);
+        LineTo(hdc, ex, ey);
+    }
+    /* Concentric circles */
+    for (int r = radius / 3; r <= radius; r += radius / 3) {
+        HBRUSH oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Ellipse(hdc, cx - r, cy - r, cx + r, cy + r);
+        SelectObject(hdc, oldBrush);
+    }
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+/* Draw key - simple key shape */
+static void DrawTileKey(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int margin = size / 4;
+    /* Key head (circle) */
+    DrawCircle(hdc, cx, y + margin + 4, 5, COLOR_KEY, RGB(200, 170, 0));
+    /* Key shaft */
+    HPEN pen = CreatePen(PS_SOLID, 2, COLOR_KEY);
+    HPEN oldPen = SelectObject(hdc, pen);
+    MoveToEx(hdc, cx, y + margin + 8, NULL);
+    LineTo(hdc, cx, y + size - margin);
+    /* Key teeth */
+    MoveToEx(hdc, cx, y + size - margin - 4, NULL);
+    LineTo(hdc, cx + 4, y + size - margin - 4);
+    MoveToEx(hdc, cx, y + size - margin, NULL);
+    LineTo(hdc, cx + 4, y + size - margin);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
+
+/* Draw locked door - rectangle with lock symbol */
+static void DrawTileLockedDoor(HDC hdc, int x, int y, int size) {
+    int margin = size / 6;
+    /* Door frame */
+    HBRUSH brush = CreateSolidBrush(COLOR_DOOR);
+    HPEN pen = CreatePen(PS_SOLID, 2, RGB(100, 50, 10));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Rectangle(hdc, x + margin, y + margin/2, x + size - margin, y + size - margin/2);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+    /* Lock */
+    int cx = x + size / 2;
+    int cy = y + size / 2 + 2;
+    DrawCircle(hdc, cx, cy - 3, 4, RGB(80, 80, 80), RGB(60, 60, 60));
+    HBRUSH lockBrush = CreateSolidBrush(RGB(80, 80, 80));
+    RECT lockRect = {cx - 3, cy, cx + 3, cy + 6};
+    FillRect(hdc, &lockRect, lockBrush);
+    DeleteObject(lockBrush);
+}
+
+/* Draw portal - concentric circles */
+static void DrawTilePortal(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int cy = y + size / 2;
+    /* Outer glow */
+    DrawCircle(hdc, cx, cy, size/2 - 3, RGB(0, 60, 100), RGB(0, 100, 150));
+    /* Middle ring */
+    DrawCircle(hdc, cx, cy, size/3, RGB(0, 120, 180), RGB(0, 150, 200));
+    /* Inner core */
+    DrawCircle(hdc, cx, cy, size/5, RGB(100, 200, 255), RGB(150, 220, 255));
+}
+
+/* Draw player - green diamond/circle */
+static void DrawPlayer(HDC hdc, int x, int y, int size) {
+    int cx = x + size / 2;
+    int cy = y + size / 2;
+    int margin = size / 4;
+    /* Background glow */
+    DrawCircle(hdc, cx, cy, size/2 - 2, RGB(0, 50, 0), RGB(0, 80, 0));
+    /* Player diamond */
+    POINT pts[4] = {
+        {cx, y + margin},           /* top */
+        {x + size - margin, cy},    /* right */
+        {cx, y + size - margin},    /* bottom */
+        {x + margin, cy}            /* left */
+    };
+    HBRUSH brush = CreateSolidBrush(COLOR_PLAYER);
+    HPEN pen = CreatePen(PS_SOLID, 2, RGB(150, 255, 150));
+    HBRUSH oldBrush = SelectObject(hdc, brush);
+    HPEN oldPen = SelectObject(hdc, pen);
+    Polygon(hdc, pts, 4);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+/* Main tile drawing dispatcher */
+static void DrawTile(HDC hdc, TileType tile, int x, int y, int size) {
+    switch (tile) {
+        case TILE_EMPTY:       DrawTileEmpty(hdc, x, y, size); break;
+        case TILE_WALL:        DrawTileWall(hdc, x, y, size); break;
+        case TILE_START:       DrawTileStart(hdc, x, y, size); break;
+        case TILE_STAIRS:      DrawTileStairs(hdc, x, y, size); break;
+        case TILE_COIN:        DrawTileCoin(hdc, x, y, size); break;
+        case TILE_CHEST:       DrawTileChest(hdc, x, y, size); break;
+        case TILE_HEART:       DrawTileHeart(hdc, x, y, size); break;
+        case TILE_ENEMY:       DrawTileEnemy(hdc, x, y, size); break;
+        case TILE_WEB:         DrawTileWeb(hdc, x, y, size); break;
+        case TILE_KEY:         DrawTileKey(hdc, x, y, size); break;
+        case TILE_LOCKED_DOOR: DrawTileLockedDoor(hdc, x, y, size); break;
+        case TILE_PORTAL:      DrawTilePortal(hdc, x, y, size); break;
+        default: break;
+    }
+}
 
 /* ==========================================================================
  * GLOBAL STATE
@@ -639,9 +893,6 @@ static void PaintGrid(HDC hdc, int offsetX, int offsetY) {
 
     Level *level = g_game->current_level;
 
-    SelectObject(hdc, g_fontSymbol);
-    SetBkMode(hdc, TRANSPARENT);
-
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
             int px = offsetX + x * CELL_SIZE;
@@ -649,7 +900,6 @@ static void PaintGrid(HDC hdc, int offsetX, int offsetY) {
 
             GridCell *cell = &level->grid[y][x];
             COLORREF bgColor = (cell->tile == TILE_WALL) ? COLOR_WALL : COLOR_FLOOR;
-            COLORREF fgColor = GetTileColor(cell->tile);
 
             /* Draw cell background */
             HBRUSH bgBrush = CreateSolidBrush(bgColor);
@@ -666,23 +916,12 @@ static void PaintGrid(HDC hdc, int offsetX, int offsetY) {
             SelectObject(hdc, oldPen);
             DeleteObject(pen);
 
-            /* Draw symbol or player */
-            const wchar_t *symbol;
+            /* Draw tile graphics or player */
             if (x == g_game->player.x && y == g_game->player.y) {
-                symbol = L"@";
-                fgColor = COLOR_PLAYER;
-
-                /* Player highlight */
-                HBRUSH hlBrush = CreateSolidBrush(RGB(0, 68, 0));
-                RECT hlRect = {px + 2, py + 2, px + CELL_SIZE - 2, py + CELL_SIZE - 2};
-                FillRect(hdc, &hlRect, hlBrush);
-                DeleteObject(hlBrush);
+                DrawPlayer(hdc, px, py, CELL_SIZE);
             } else {
-                symbol = TILE_SYMBOLS[cell->tile];
+                DrawTile(hdc, cell->tile, px, py, CELL_SIZE);
             }
-
-            SetTextColor(hdc, fgColor);
-            DrawTextW(hdc, symbol, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
     }
 }
