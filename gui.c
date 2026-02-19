@@ -20,7 +20,7 @@
  * ========================================================================== */
 
 #define WIN_WIDTH   950
-#define WIN_HEIGHT  620
+#define WIN_HEIGHT  720
 #define CELL_SIZE   24
 #define GRID_OFFSET_X  20
 #define GRID_OFFSET_Y  60
@@ -721,6 +721,44 @@ static void OnLeaveShop(void) {
 }
 
 /* ==========================================================================
+ * HELP DIALOG
+ * ========================================================================== */
+
+static void ShowHelpDialog(HWND parent) {
+    const wchar_t *helpText =
+        L"PROCEDURAL DUNGEON CRAWLER\r\n"
+        L"==========================\r\n\r\n"
+        L"GOAL: Reach the stairs on each floor to descend.\r\n"
+        L"Complete all 100 floors to win!\r\n\r\n"
+        L"MOVEMENT:\r\n"
+        L"- Roll the die to determine movement\r\n"
+        L"- EVEN roll (2,4,6) = Orthogonal (N/S/E/W)\r\n"
+        L"- ODD roll (1,3,5) = Diagonal (NE/NW/SE/SW)\r\n"
+        L"- Move the number of steps shown\r\n"
+        L"- Cannot backtrack on same turn\r\n\r\n"
+        L"TILE LEGEND:\r\n"
+        L"  Green Diamond = You (Player)\r\n"
+        L"  Pink Triangle = Stairs (Goal)\r\n"
+        L"  Yellow Circle = Coin (+1 gold)\r\n"
+        L"  Brown Box = Chest (roll for gold)\r\n"
+        L"  Pink Heart = Heart (heal HP)\r\n"
+        L"  Red X = Enemy (takes HP)\r\n"
+        L"  Gray Web = Spider Web (lose gold, halves next roll)\r\n"
+        L"  Yellow Key = Key (opens locked doors)\r\n"
+        L"  Brown Door = Locked Door (need key)\r\n"
+        L"  Blue Circles = Portal (teleports to linked portal)\r\n"
+        L"  Green Square = Start Position\r\n\r\n"
+        L"CONTROLS:\r\n"
+        L"  SPACE = Roll Die\r\n"
+        L"  W/A/S/D or Arrows = Move orthogonally\r\n"
+        L"  Q/E/Z/C = Move diagonally\r\n\r\n"
+        L"SHOPS appear every 7-10 floors.\r\n"
+        L"Buy items to help your journey!";
+
+    MessageBoxW(parent, helpText, L"Help - How to Play", MB_OK | MB_ICONINFORMATION);
+}
+
+/* ==========================================================================
  * START GAME DIALOG
  * ========================================================================== */
 
@@ -1094,7 +1132,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
             g_hLog = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
-                rightX, 500, 200, 120, hwnd, (HMENU)ID_LOG, NULL, NULL);
+                rightX, 500, 200, 160, hwnd, (HMENU)ID_LOG, NULL, NULL);
+
+            /* Help button */
+            CreateWindowW(L"BUTTON", L"Help",
+                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                rightX + 130, 200, 60, 35, hwnd, (HMENU)ID_HELP_BTN, NULL, NULL);
 
             /* Shop buttons (hidden by default) */
             int shopY = 250;
@@ -1203,6 +1246,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 case ID_GAMBLE_HIGH: OnGamble(true); break;
                 case ID_GAMBLE_LOW: OnGamble(false); break;
                 case ID_LEAVE_SHOP: OnLeaveShop(); break;
+                case ID_HELP_BTN: ShowHelpDialog(hwnd); break;
             }
             return 0;
 

@@ -486,23 +486,34 @@ static void place_portals(Level *level, PRNG *rng) {
         PortalGroup *group = &level->portal_groups[level->portal_group_count];
         group->count = 0;
 
+        /* Collect positions first without modifying grid */
+        int temp_positions[4][2];
+        int temp_count = 0;
+
         int portals_in_group = prng_randint(rng, 2, 3);
         for (int p = 0; p < portals_in_group && idx < empty_count; p++) {
-            int x = empty_tiles[idx][0];
-            int y = empty_tiles[idx][1];
-
-            level->grid[y][x].tile = TILE_PORTAL;
-            level->grid[y][x].portal_group = level->portal_group_count;
-
-            group->positions[group->count][0] = x;
-            group->positions[group->count][1] = y;
-            group->count++;
+            temp_positions[temp_count][0] = empty_tiles[idx][0];
+            temp_positions[temp_count][1] = empty_tiles[idx][1];
+            temp_count++;
             idx++;
         }
 
-        if (group->count >= 2) {
+        /* Only create group if we have at least 2 portals */
+        if (temp_count >= 2) {
+            for (int p = 0; p < temp_count; p++) {
+                int x = temp_positions[p][0];
+                int y = temp_positions[p][1];
+
+                level->grid[y][x].tile = TILE_PORTAL;
+                level->grid[y][x].portal_group = level->portal_group_count;
+
+                group->positions[group->count][0] = x;
+                group->positions[group->count][1] = y;
+                group->count++;
+            }
             level->portal_group_count++;
         }
+        /* If < 2 portals, we just skip this group - tiles remain TILE_EMPTY */
     }
 }
 
