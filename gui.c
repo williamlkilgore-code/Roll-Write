@@ -348,6 +348,7 @@ static HWND g_hwnd = NULL;
 static HWND g_hLog = NULL;
 static HWND g_hInventory = NULL;
 static HWND g_hRollBtn = NULL;
+static HWND g_hSaveBtn = NULL;
 static HWND g_dirBtns[8] = {0};
 static HWND g_shopBtns[4] = {0};
 static HWND g_hGambleHigh = NULL;
@@ -759,8 +760,36 @@ static void ShowHelpDialog(HWND parent) {
 }
 
 /* ==========================================================================
+ * SAVE/LOAD FUNCTIONS
+ * ========================================================================== */
+
+#define SAVE_FILENAME "dungeon_save.dat"
+
+static void OnSave(void) {
+    if (!g_game) return;
+
+    if (game_save(g_game, SAVE_FILENAME)) {
+        char buf[128];
+        sprintf(buf, "Game saved! Floor %d, HP: %d, Coins: %d",
+                g_game->current_floor, g_game->player.hp, g_game->player.coins);
+        LogMessageA(buf);
+        MessageBoxW(g_hwnd, L"Game saved successfully!", L"Save Game", MB_OK | MB_ICONINFORMATION);
+    } else {
+        LogMessage(L"Failed to save game!");
+        MessageBoxW(g_hwnd, L"Failed to save game.", L"Save Error", MB_OK | MB_ICONERROR);
+    }
+}
+
+static Game *TryLoadGame(void) {
+    Game *loaded = game_load(SAVE_FILENAME);
+    return loaded;
+}
+
+/* ==========================================================================
  * START GAME DIALOG
  * ========================================================================== */
+
+#define ID_LOAD_BTN 200
 
 static INT_PTR CALLBACK StartDlgProc(HWND hdlg, UINT msg, WPARAM wParam, LPARAM lParam) {
     static uint64_t *pSeed;
@@ -809,7 +838,10 @@ static INT_PTR CALLBACK StartDlgProc(HWND hdlg, UINT msg, WPARAM wParam, LPARAM 
                     return TRUE;
                 }
                 case IDCANCEL:
-                    EndDialog(hdlg, IDCANCEL);
+                    EndDialog(hdlg, 0);
+                    return TRUE;
+                case ID_LOAD_BTN:
+                    EndDialog(hdlg, ID_LOAD_BTN);
                     return TRUE;
             }
             break;
@@ -821,18 +853,19 @@ static INT_PTR CALLBACK StartDlgProc(HWND hdlg, UINT msg, WPARAM wParam, LPARAM 
     return FALSE;
 }
 
-static bool ShowStartDialog(HWND parent, uint64_t *seed, Difficulty *diff) {
+/* Return values: 0 = cancel, IDOK = new game, ID_LOAD_BTN = load game */
+static int ShowStartDialog(HWND parent, uint64_t *seed, Difficulty *diff) {
     /* Create dialog template in memory */
     WORD *p;
     DLGTEMPLATE *dlg;
-    BYTE buf[1024];
+    BYTE buf[2048];
 
     memset(buf, 0, sizeof(buf));
     dlg = (DLGTEMPLATE *)buf;
     dlg->style = DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
-    dlg->cdit = 9;  /* Number of controls */
+    dlg->cdit = 10;  /* Number of controls */
     dlg->x = 0; dlg->y = 0;
-    dlg->cx = 150; dlg->cy = 120;
+    dlg->cx = 150; dlg->cy = 135;
 
     p = (WORD *)(dlg + 1);
     *p++ = 0; *p++ = 0;  /* Menu, class */
@@ -915,11 +948,23 @@ static bool ShowStartDialog(HWND parent, uint64_t *seed, Difficulty *diff) {
     wcscpy((wchar_t *)p, L"Cancel");
     p += wcslen(L"Cancel") + 1;
     *p++ = 0;
+    if ((ULONG_PTR)p & 2) p++;
+
+    /* Load button */
+    item = (DLGITEMTEMPLATE *)p;
+    item->style = WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON;
+    item->x = 40; item->y = 115; item->cx = 70; item->cy = 14;
+    item->id = ID_LOAD_BTN;
+    p = (WORD *)(item + 1);
+    *p++ = 0xFFFF; *p++ = 0x0080;
+    wcscpy((wchar_t *)p, L"Load Saved Game");
+    p += wcslen(L"Load Saved Game") + 1;
+    *p++ = 0;
 
     LONG_PTR params[2] = {(LONG_PTR)seed, (LONG_PTR)diff};
     INT_PTR result = DialogBoxIndirectParamW(NULL, dlg, parent, StartDlgProc, (LPARAM)params);
 
-    return result == IDOK;
+    return (int)result;  /* 0=cancel, IDOK=new game, ID_LOAD_BTN=load */
 }
 
 /* ==========================================================================
@@ -1139,6 +1184,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                 rightX + 130, 200, 60, 35, hwnd, (HMENU)ID_HELP_BTN, NULL, NULL);
 
+            /* Save button - only enabled at start of floor */
+            g_hSaveBtn = CreateWindowW(L"BUTTON", L"Save Game",
+                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                rightX, 165, 90, 25, hwnd, (HMENU)ID_SAVE_BTN, NULL, NULL);
+
             /* Shop buttons (hidden by default) */
             int shopY = 250;
             for (int i = 0; i < 4; i++) {
@@ -1165,7 +1215,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             uint64_t seed = 12345;
             Difficulty diff = DIFF_NORMAL;
 
-            if (ShowStartDialog(hwnd, &seed, &diff)) {
+            int dialogResult = ShowStartDialog(hwnd, &seed, &diff);
+
+            if (dialogResult == IDOK) {
+                /* New game */
                 g_game = game_create(seed, diff);
                 game_start(g_game);
 
@@ -1178,6 +1231,22 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
                 ShowShopUI(false);
                 UpdateInventory();
+            } else if (dialogResult == ID_LOAD_BTN) {
+                /* Load saved game */
+                g_game = TryLoadGame();
+                if (g_game) {
+                    char buf[64];
+                    sprintf(buf, "Game loaded! Floor %d, Seed: %llu",
+                            g_game->current_floor, (unsigned long long)g_game->master_seed);
+                    LogMessageA(buf);
+
+                    ShowShopUI(game_is_shop_floor(g_game));
+                    UpdateInventory();
+                } else {
+                    MessageBoxW(hwnd, L"No saved game found or save file is corrupted.",
+                                L"Load Error", MB_OK | MB_ICONERROR);
+                    PostQuitMessage(0);
+                }
             } else {
                 PostQuitMessage(0);
             }
@@ -1247,6 +1316,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 case ID_GAMBLE_LOW: OnGamble(false); break;
                 case ID_LEAVE_SHOP: OnLeaveShop(); break;
                 case ID_HELP_BTN: ShowHelpDialog(hwnd); break;
+                case ID_SAVE_BTN: OnSave(); break;
             }
             return 0;
 

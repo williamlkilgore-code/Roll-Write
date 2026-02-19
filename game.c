@@ -1052,3 +1052,100 @@ int game_apply_lucky_charm(Game *game, int roll, int adjust) {
     if (new_roll > 6) new_roll = 6;
     return new_roll;
 }
+
+/* ==========================================================================
+ * SAVE/LOAD GAME
+ * ========================================================================== */
+
+#define SAVE_MAGIC 0x44435356  /* "DCSV" - Dungeon Crawler Save */
+#define SAVE_VERSION 1
+
+bool game_save(Game *game, const char *filepath) {
+    if (!game) return false;
+
+    FILE *f = fopen(filepath, "wb");
+    if (!f) return false;
+
+    /* Write header */
+    uint32_t magic = SAVE_MAGIC;
+    uint32_t version = SAVE_VERSION;
+    fwrite(&magic, sizeof(magic), 1, f);
+    fwrite(&version, sizeof(version), 1, f);
+
+    /* Write game state */
+    fwrite(&game->master_seed, sizeof(game->master_seed), 1, f);
+    fwrite(&game->difficulty, sizeof(game->difficulty), 1, f);
+    fwrite(&game->current_floor, sizeof(game->current_floor), 1, f);
+    fwrite(&game->turn_number, sizeof(game->turn_number), 1, f);
+
+    /* Write player state */
+    fwrite(&game->player.hp, sizeof(game->player.hp), 1, f);
+    fwrite(&game->player.max_hp, sizeof(game->player.max_hp), 1, f);
+    fwrite(&game->player.coins, sizeof(game->player.coins), 1, f);
+    fwrite(&game->player.keys, sizeof(game->player.keys), 1, f);
+    fwrite(&game->player.inventory_count, sizeof(game->player.inventory_count), 1, f);
+    fwrite(game->player.inventory, sizeof(ItemType), game->player.inventory_count, f);
+
+    /* Write shop floors */
+    fwrite(&game->shop_floor_count, sizeof(game->shop_floor_count), 1, f);
+    fwrite(game->shop_floors, sizeof(int), game->shop_floor_count, f);
+
+    fclose(f);
+    return true;
+}
+
+Game *game_load(const char *filepath) {
+    FILE *f = fopen(filepath, "rb");
+    if (!f) return NULL;
+
+    /* Read and verify header */
+    uint32_t magic, version;
+    fread(&magic, sizeof(magic), 1, f);
+    fread(&version, sizeof(version), 1, f);
+
+    if (magic != SAVE_MAGIC || version != SAVE_VERSION) {
+        fclose(f);
+        return NULL;
+    }
+
+    /* Read game state */
+    uint64_t master_seed;
+    Difficulty difficulty;
+    int current_floor, turn_number;
+
+    fread(&master_seed, sizeof(master_seed), 1, f);
+    fread(&difficulty, sizeof(difficulty), 1, f);
+    fread(&current_floor, sizeof(current_floor), 1, f);
+    fread(&turn_number, sizeof(turn_number), 1, f);
+
+    /* Create game with saved seed and difficulty */
+    Game *game = game_create(master_seed, difficulty);
+    if (!game) {
+        fclose(f);
+        return NULL;
+    }
+
+    /* Read player state */
+    fread(&game->player.hp, sizeof(game->player.hp), 1, f);
+    fread(&game->player.max_hp, sizeof(game->player.max_hp), 1, f);
+    fread(&game->player.coins, sizeof(game->player.coins), 1, f);
+    fread(&game->player.keys, sizeof(game->player.keys), 1, f);
+    fread(&game->player.inventory_count, sizeof(game->player.inventory_count), 1, f);
+    if (game->player.inventory_count > 0) {
+        fread(game->player.inventory, sizeof(ItemType), game->player.inventory_count, f);
+    }
+
+    /* Read shop floors */
+    fread(&game->shop_floor_count, sizeof(game->shop_floor_count), 1, f);
+    if (game->shop_floor_count > 0) {
+        fread(game->shop_floors, sizeof(int), game->shop_floor_count, f);
+    }
+
+    fclose(f);
+
+    /* Advance to saved floor (regenerates level with same seed) */
+    game->turn_number = turn_number;
+    game_advance_floor(game, current_floor);
+
+    return game;
+}
